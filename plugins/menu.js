@@ -5,7 +5,7 @@ const path   = require('path');
 const config = require('../config');
 
 // const REPO    = 'https://github.com/SilvaTechB/silva-md-v4';
-const WEBSITE = 'https://silvatech.co.ke';
+const WEBSITE = 'https://hazurudev.vercel.app';
 
 const CATEGORIES = [
     {
@@ -125,7 +125,7 @@ module.exports = {
         if (rest.length) {
             const rows = rest.map(c => `│  ◈ \`${pfx}${c}\``).join('\n');
             catBlocks.push(
-                `╭─「 🔧 *Other* 」─\n│ _Extra commands_\n│\n${rows}\n╰────────────────────`
+                `╭─「 🔧 *Otros* 」─\n│ _Comandos extra_\n│\n${rows}\n╰────────────────────`
             );
         }
 

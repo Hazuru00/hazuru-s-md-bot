@@ -13,7 +13,7 @@ module.exports = {
     OWNER_NUMBER:          process.env.OWNER_NUMBER || "254700143167",
     OWNER_NAME:            process.env.OWNER_NAME || "Silva MD",
     DESCRIPTION:           process.env.DESCRIPTION || "Silva MD Bot",
-    ALIVE_IMG:             process.env.ALIVE_IMG || "https://files.catbox.moe/5uli5p.jpeg",
+    ALIVE_IMG:             process.env.ALIVE_IMG || "https://miro.medium.com/v2/resize:fit:640/format:webp/1*vBi4Ycgdn5t3lu2SvQXuog.gif",
     LIVE_MSG:              process.env.LIVE_MSG || "Silva MD is active",
     MODE:                  process.env.MODE || "both",
     AUTO_STATUS_SEEN:      toBool(process.env.AUTO_STATUS_SEEN,      true),
