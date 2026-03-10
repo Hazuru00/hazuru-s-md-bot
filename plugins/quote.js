@@ -3,7 +3,7 @@ const axios = require('axios');
 
 module.exports = {
     commands:    ['quote', 'inspire', 'motivation'],
-    description: 'Get a random inspirational quote',
+    description: 'get a random inspirational quote',
     permission:  'public',
     group:       true,
     private:     true,
