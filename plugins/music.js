@@ -5,10 +5,11 @@ const axios = require("axios");
 const yts = require("yt-search"); // Asegúrate de tenerlo en package.json
 
 const FALLBACK_APIS = (link) => [
-  `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(link)}`,
   `https://api.zenkey.my.id/api/download/ytmp3?url=${encodeURIComponent(link)}&apikey=zenkey`,
-  `https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(link)}`,
-  `https://api.akuari.my.id/downloader/youtubeaudio?link=${encodeURIComponent(link)}`,
+  `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(link)}`,
+  `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(link)}`,
+  `https://api.lolhuman.xyz/api/ytaudio2?apikey=GataDios&url=${encodeURIComponent(link)}`, // API Key pública común
+  `https://api.skizo.tech/api/ytmp3?url=${encodeURIComponent(link)}&apikey=batu`,
 ];
 
 module.exports = {
@@ -75,28 +76,41 @@ module.exports = {
       // --- PASO 4: FALLBACK APIS ---
       let audioUrl = null;
       if (!audioBuffer) {
+        console.log("[Music] Fallback: Intentando con APIs externas...");
         for (const api of FALLBACK_APIS(videoUrl)) {
           try {
-            const { data } = await axios.get(api, { timeout: 15000 });
-            const dl =
-              data?.result?.downloadUrl ||
+            const { data } = await axios.get(api, { timeout: 20000 });
+
+            // Buscador universal de enlaces de descarga en el JSON
+            audioUrl =
+              data?.result?.download ||
               data?.result?.url ||
-              data?.download ||
+              data?.result?.link ||
+              data?.data?.url ||
+              data?.data?.link ||
               data?.url ||
               data?.link ||
               (typeof data?.result === "string" ? data.result : null);
-            if (dl) {
-              audioUrl = dl;
+
+            if (audioUrl && audioUrl.startsWith("http")) {
+              console.log("[Music] Enlace encontrado en:", api);
               break;
             }
-          } catch {
+          } catch (e) {
+            console.error(
+              `[Music] API fallida (${api.split("/")[2]}):`,
+              e.message,
+            );
             continue;
           }
         }
       }
 
-      if (!audioBuffer && !audioUrl)
-        throw new Error("Failed to fetch audio from all sources.");
+      if (!audioBuffer && !audioUrl) {
+        throw new Error(
+          "No se pudo obtener el audio. YouTube está bloqueando todas las conexiones. Intenta más tarde.",
+        );
+      }
 
       // --- PASO 5: ENVIAR AUDIO ---
       const payload = audioBuffer
