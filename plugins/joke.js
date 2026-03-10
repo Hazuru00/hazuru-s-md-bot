@@ -15,12 +15,15 @@ module.exports = {
         const valid = ['any', 'programming', 'misc', 'dark', 'pun', 'spooky', 'christmas'];
         const cat = args[0] && valid.includes(args[0].toLowerCase()) ? args[0] : 'Any';
         try {
-            const res  = await axios.get(`https://v2.jokeapi.dev/joke/${cat}`, { params: { blacklistFlags: 'racist,sexist' }, timeout: 8000 });
+            const res = await axios.get(
+              `https://v2.jokeapi.dev/joke/${cat}?lang=es`,
+              { params: { blacklistFlags: "racist,sexist" }, timeout: 8000 },
+            );
             const data = res.data;
             if (data.error) throw new Error(data.message || 'No joke found');
             const jokeText = data.type === 'twopart'
-                ? `😂 *Joke* _(${data.category})_\n\n❓ ${data.setup}\n\n💬 ${data.delivery}`
-                : `😂 *Joke* _(${data.category})_\n\n${data.joke}`;
+                ? `😂 *Chiste* _(${data.category})_\n\n❓ ${data.setup}\n\n💬 ${data.delivery}`
+                : `😂 *Chiste* _(${data.category})_\n\n${data.joke}`;
             await sock.sendMessage(jid, { text: jokeText, contextInfo }, { quoted: message });
         } catch (err) {
             await sock.sendMessage(jid, { text: `❌ Couldn't fetch a joke: ${err.message}`, contextInfo }, { quoted: message });
