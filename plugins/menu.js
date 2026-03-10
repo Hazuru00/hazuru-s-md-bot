@@ -4,56 +4,56 @@ const fs     = require('fs');
 const path   = require('path');
 const config = require('../config');
 
-const REPO    = 'https://github.com/SilvaTechB/silva-md-v4';
+// const REPO    = 'https://github.com/SilvaTechB/silva-md-v4';
 const WEBSITE = 'https://silvatech.co.ke';
 
 const CATEGORIES = [
     {
         icon: '⬇️',
-        name: 'Downloaders',
-        desc: 'Download from any platform',
+        name: 'Descargadores',
+        desc: 'Descarga desde cualquier plataforma',
         cmds: ['yt', 'tiktok', 'instagram', 'facebook', 'apk']
     },
     {
         icon: '🎵',
-        name: 'Music & Lyrics',
-        desc: 'Search, download & find lyrics',
+        name: 'Canciones & Lyrics',
+        desc: 'Busca, descarga y busca lyrics',
         cmds: ['play', 'shazam', 'lyrics']
     },
     {
         icon: '🤖',
         name: 'AI & Tools',
-        desc: 'Smart utilities & AI power',
+        desc: 'Ultilidades con el poder de la IA',
         cmds: ['ai', 'imagine', 'translate', 'define', 'tts', 'calc', 'qrcode', 'base64', 'shorten', 'gitclone']
     },
     {
         icon: '🌍',
-        name: 'Search & Info',
+        name: 'Busqueda Y info',
         desc: 'Wikipedia, country, IP & more',
         cmds: ['wiki', 'country', 'ip', 'currency', 'time', 'weather', 'numberfact']
     },
     {
         icon: '🖼️',
-        name: 'Media & Stickers',
+        name: 'Archivos & Stickers',
         desc: 'Stickers, view-once & media',
         cmds: ['sticker', 'vv']
     },
     {
         icon: '😄',
-        name: 'Fun & Entertainment',
+        name: 'Diversion & Entretenimiento',
         desc: 'Jokes, riddles, facts & games',
         cmds: ['joke', 'fact', 'riddle', 'meme', 'quote', 'advice', 'compliment', 'flip', 'bible', 'hello']
     },
     {
         icon: '🔒',
-        name: 'Privacy & Encoding',
+        name: 'Privacidad & Encriptacion',
         desc: 'Password, morse & encoding tools',
         cmds: ['password', 'morse', 'base64']
     },
     {
         icon: '🛡️',
-        name: 'Group Safety',
-        desc: 'Moderation & protection',
+        name: 'Moderacion Segura',
+        desc: 'Moderacion & Proteccion',
         cmds: ['antidemote', 'antidelete', 'antilink', 'afk', 'autoreply', 'anticall', 'blocklist']
     },
     {
@@ -70,15 +70,15 @@ const CATEGORIES = [
     },
     {
         icon: 'ℹ️',
-        name: 'Info & Misc',
-        desc: 'Bot info & utilities',
+        name: 'Info & Miselaneos',
+        desc: 'indo del bot & utilidades',
         cmds: ['ping', 'uptime', 'owner', 'getjid', 'spp', 'repo', 'antivv']
     },
 ];
 
 module.exports = {
     commands:    ['menu', 'help', 'list'],
-    description: 'Show all available commands',
+    description: 'Muestran todos los comandos disponibles',
     permission:  'public',
     group:       true,
     private:     true,
@@ -133,37 +133,37 @@ module.exports = {
         const header = [
             `╔═══════════════════════════╗`,
             `║  ⚡  *${botName.toUpperCase()}*  ⚡  ║`,
-            `║   *The Ultimate WA Bot*   ║`,
+            `║     *El bot definitivo*   ║`,
             `╚═══════════════════════════╝`,
             ``,
             `┌─────────────────────────────`,
             `│ 🤖 *Bot:*      ${botName}`,
-            `│ 📱 *Number:*   ${botNum}`,
+            `│ 📱 *Numero:*   ${botNum}`,
             `│ 🔑 *Prefix:*   \`${pfx}\``,
             `│ ${modeEmoji} *Mode:*     ${mode}`,
             `│ 📦 *Plugins:*  ${plugins.length} loaded`,
             `│ 🕐 *Time:*     ${now}`,
             `└─────────────────────────────`,
             ``,
-            `✦ ✦ ✦  *C O M M A N D S*  ✦ ✦ ✦`,
+            `✦ ✦ ✦  *C O M A N D O S*  ✦ ✦ ✦`,
             ``,
         ].join('\n');
 
         // ── Footer ────────────────────────────────────────────────────────
         const footer = [
-            ``,
-            `┌─────────────────────────────`,
-            `│ 💡 *Usage:* \`${pfx}help <command>\``,
-            `│ 🌐 *Web:*   ${WEBSITE}`,
-            `│ 📂 *Repo:*  ${REPO}`,
-            `└─────────────────────────────`,
-            ``,
-            `> ⚡ _Powered by Silva Tech Inc_`,
-        ].join('\n');
+          ``,
+          `┌─────────────────────────────`,
+          `│ 💡 *Usage:* \`${pfx}help <command>\``,
+          `│ 🌐 *Web:*   https://hazurudev.vercel.app`,
+          `└─────────────────────────────`,
+          ``,
+          `> ⚡ _Creditos Para Silva Tech Inc_`,
+        ].join("\n");
 
         const fullText = `${header}${catBlocks.join('\n\n')}\n${footer}`;
 
-        const imgUrl = config.ALIVE_IMG || 'https://files.catbox.moe/5uli5p.jpeg';
+        const imgUrl =
+          config.ALIVE_IMG || "https://miro.medium.com/v2/resize:fit:640/format:webp/1*vBi4Ycgdn5t3lu2SvQXuog.gif";
         try {
             await sock.sendMessage(jid, {
                 image:   { url: imgUrl },
@@ -171,7 +171,7 @@ module.exports = {
                 contextInfo: {
                     ...contextInfo,
                     externalAdReply: {
-                        title:               `${botName} — Command Menu`,
+                        title:               `${botName} — Menu de Comandos`,
                         body:                `${plugins.length} plugins  •  Prefix: ${pfx}  •  ${mode} mode`,
                         thumbnailUrl:        imgUrl,
                         sourceUrl:           WEBSITE,

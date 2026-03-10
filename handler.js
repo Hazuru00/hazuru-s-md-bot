@@ -52,13 +52,13 @@ async function safeSend(sock, jid, content, opts = {}) {
 
 // Newsletter watermark — only safe in private chats; groups get an empty object
 const GLOBAL_CONTEXT_INFO = {
-    forwardingScore: 999,
-    isForwarded: true,
-    forwardedNewsletterMessageInfo: {
-        newsletterJid: '120363200367779016@newsletter',
-        newsletterName: '◢◤ Silva Tech Nexus ◢◤',
-        serverMessageId: 144
-    }
+  forwardingScore: 0,
+  isForwarded: false,
+//   forwardedNewsletterMessageInfo: {
+    // newsletterJid: "",  Puedes dejarlo así o buscar tu ID
+   // newsletterName: "✨ Mi Super Bot ✨",  Aquí pon el nombre de tu bot o grupo
+    // serverMessageId: 1,
+//   },
 };
 
 // ─── Plugin loader ───────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ async function handleMessages(sock, message) {
             if (afkPlugin?.isAfk()) {
                 const { reason, since } = afkPlugin.getAfkData();
                 await safeSend(sock, jid, {
-                    text: `🤖 *Beep boop!* This is a bot.\n\n👤 My owner is currently away.\n📝 *Reason:* ${reason}\n⏱ *Away for:* ${formatDuration(Date.now() - since)}`,
+                    text: `🤖 *Beep boop!* Esto es un bot.\n\n👤 mi dueño no esta por los momentos.\n📝 *Razon:* ${reason}\n⏱ *Espera por:* ${formatDuration(Date.now() - since)}`,
                 }, { quoted: message });
                 return;
             }
@@ -207,7 +207,7 @@ async function handleMessages(sock, message) {
                             delete: message.key
                         });
                         await safeSend(sock, jid, {
-                            text: `⚠️ @${from.split('@')[0]} links are not allowed in this group.`,
+                            text: `⚠️ @${from.split('@')[0]} los links no estan permitidos en este grupo.`,
                             mentions: [from]
                         });
                     } catch (e) {
@@ -237,7 +237,7 @@ async function handleMessages(sock, message) {
             const prediction = predictCommand(command, plugins);
             if (prediction?.confidence === 'ambiguous') {
                 await safeSend(sock, jid, {
-                    text: `❓ *Did you mean one of these?*\n${prediction.matches.map(c => `• \`${prefix}${c}\``).join('\n')}`
+                    text: `❓ *Quisiste mencionar uno de estos?*\n${prediction.matches.map(c => `• \`${prefix}${c}\``).join('\n')}`
                 }, { quoted: message });
                 if (config.AUTO_TYPING || config.AUTO_RECORDING)
                     try { await sock.sendPresenceUpdate('paused', jid); } catch { /* ok */ }
@@ -321,8 +321,8 @@ async function handleMessages(sock, message) {
 
             if (!allowed) {
                 const notice = perm === PERM.OWNER
-                    ? '⛔ This command is reserved for the bot owner.'
-                    : `⛔ This command requires ${isGroup ? 'group admin' : 'elevated'} privileges.`;
+                    ? '⛔ Este comando esta reservado para el dueño del bot.'
+                    : `⛔ Este comando requiere los permisos ${isGroup ? 'Admin' : 'Owner'}.`;
                 await safeSend(sock, jid, { text: notice }, { quoted: message });
                 continue;
             }
