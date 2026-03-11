@@ -2,19 +2,20 @@
 
 const playdl = require("play-dl");
 const axios = require("axios");
-const yts = require("yt-search"); // Asegúrate de tenerlo en package.json
+const yts = require("yt-search");
 
+// Lista de APIs extendida y actualizada 2026
 const FALLBACK_APIS = (link) => [
+  `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(link)}`,
   `https://api.zenkey.my.id/api/download/ytmp3?url=${encodeURIComponent(link)}&apikey=zenkey`,
   `https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(link)}`,
-  `https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(link)}`,
-  `https://api.lolhuman.xyz/api/ytaudio2?apikey=GataDios&url=${encodeURIComponent(link)}`, // API Key pública común
+  `https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(link)}`,
   `https://api.skizo.tech/api/ytmp3?url=${encodeURIComponent(link)}&apikey=batu`,
 ];
 
 module.exports = {
   commands: ["play", "music"],
-  description: "Search and download a song from YouTube",
+  description: "Search and download music with multi-source fallback",
   permission: "public",
   group: true,
   private: true,
@@ -28,121 +29,119 @@ module.exports = {
         { quoted: message },
       );
 
-    await sock.sendMessage(
+    // Mensaje inicial de búsqueda
+    const { key } = await sock.sendMessage(
       sender,
       { text: `🔍 Searching: *${query}*...` },
       { quoted: message },
     );
 
     try {
-      let videoUrl, title, artist, thumbnail, duration;
-
-      // --- PASO 1: BÚSQUEDA (Usando yt-search para evitar el error browseId) ---
+      // --- PASO 1: BÚSQUEDA ROBUSTA ---
       const search = await yts(query);
       const v = search.videos[0];
       if (!v) throw new Error("No results found.");
 
-      videoUrl = v.url;
-      title = v.title || "Unknown";
-      artist = v.author.name || "Unknown";
-      thumbnail = v.thumbnail || v.image || "";
-      duration = v.timestamp || "";
+      const videoUrl = v.url;
+      const title = v.title || "Unknown";
+      const safeTitle = title.replace(/[^\w\s-]/g, "").slice(0, 30);
 
-      // --- PASO 2: ENVIAR CARD ---
+      // --- PASO 2: ENVIAR CARD INFORMATIVA ---
       await sock.sendMessage(
         sender,
         {
-          image: { url: thumbnail },
-          caption: `🎵 *${title}*\n🎤 *Artist:* ${artist}\n⏱ *Duration:* ${duration}\n\n_Downloading..._`,
+          image: { url: v.thumbnail || v.image },
+          caption: `🎵 *${title}*\n🎤 *Artist:* ${v.author.name}\n⏱ *Duration:* ${v.timestamp}\n\n_📥 Downloading audio..._`,
           contextInfo,
         },
         { quoted: message },
       );
 
-      // --- PASO 3: INTENTAR STREAM (play-dl) ---
-      let audioBuffer = null;
+      let audioSource = null;
+      let isBuffer = false;
+
+      // --- PASO 3: MÉTODO A (STREAM DIRECTO REFORZADO) ---
       try {
-        // Forzamos un User-Agent para evitar bloqueos
-        const stream = await playdl.stream(videoUrl, { quality: 1 }); // Calidad 1 suele ser más estable para audio
+        // quality: 0 busca solo el stream de audio (m4a/opus) que es más estable
+        const stream = await playdl.stream(videoUrl, {
+          quality: 0,
+          discordPlayerCompatibility: true,
+        });
+
         const chunks = [];
         for await (const chunk of stream.stream) {
           chunks.push(chunk);
         }
-        audioBuffer = Buffer.concat(chunks);
+        audioSource = Buffer.concat(chunks);
+        isBuffer = true;
+        console.log(`[Play] Stream exitoso: ${title}`);
       } catch (streamErr) {
-        console.warn("[Music] play-dl failed, moving to APIs...");
-      }
+        console.warn(`[Play] Stream falló para ${title}, intentando APIs...`);
 
-      // --- PASO 4: FALLBACK APIS ---
-      let audioUrl = null;
-      if (!audioBuffer) {
-        console.log("[Music] Fallback: Intentando con APIs externas...");
+        // --- PASO 4: MÉTODO B (FALLBACK CON EXTRACTOR UNIVERSAL) ---
         for (const api of FALLBACK_APIS(videoUrl)) {
           try {
             const { data } = await axios.get(api, { timeout: 20000 });
 
-            // Buscador universal de enlaces de descarga en el JSON
-            audioUrl =
-              data?.result?.download ||
+            // Este extractor busca el link en cualquier propiedad común
+            const dl =
+              data?.result?.downloadUrl ||
               data?.result?.url ||
               data?.result?.link ||
               data?.data?.url ||
-              data?.data?.link ||
               data?.url ||
               data?.link ||
               (typeof data?.result === "string" ? data.result : null);
 
-            if (audioUrl && audioUrl.startsWith("http")) {
-              console.log("[Music] Enlace encontrado en:", api);
+            if (dl && dl.startsWith("http")) {
+              audioSource = dl;
+              isBuffer = false;
               break;
             }
           } catch (e) {
-            console.error(
-              `[Music] API fallida (${api.split("/")[2]}):`,
-              e.message,
-            );
             continue;
           }
         }
       }
 
-      if (!audioBuffer && !audioUrl) {
-        throw new Error(
-          "No se pudo obtener el audio. YouTube está bloqueando todas las conexiones. Intenta más tarde.",
-        );
-      }
+      if (!audioSource)
+        throw new Error("No se pudo obtener el audio de ninguna fuente.");
 
-      // --- PASO 5: ENVIAR AUDIO ---
-      const payload = audioBuffer
-        ? { audio: audioBuffer }
-        : { audio: { url: audioUrl } };
+      // Preparar el objeto de audio (Buffer o URL)
+      const audioContent = isBuffer ? audioSource : { url: audioSource };
+
+      // --- PASO 5: ENVIAR COMO AUDIO (PTT / NOTA DE VOZ) ---
       await sock.sendMessage(
         sender,
         {
-          ...payload,
+          audio: audioContent,
           mimetype: "audio/mpeg",
-          ptt: false, // Cambia a true si lo quieres como nota de voz
+          ptt: true, // Enviado como nota de voz para reproducción inmediata
         },
         { quoted: message },
       );
 
-      // --- PASO 6: ENVIAR DOCUMENTO (Opcional) ---
-      const safeTitle = title.replace(/[^\w\s-]/g, "").slice(0, 30);
+      // --- PASO 6: ENVIAR COMO DOCUMENTO (PARA DESCARGAR) ---
       await sock.sendMessage(
         sender,
         {
-          document: audioBuffer ? audioBuffer : { url: audioUrl },
+          document: audioContent,
           mimetype: "audio/mpeg",
           fileName: `${safeTitle}.mp3`,
           contextInfo,
         },
         { quoted: message },
       );
+
+      // Opcional: Borrar el mensaje de "Searching..." para limpiar el chat
+      await sock.sendMessage(sender, { delete: key });
     } catch (err) {
-      console.error(err);
+      console.error("[Play Error]", err);
       await sock.sendMessage(
         sender,
-        { text: `❌ *Error:* ${err.message}` },
+        {
+          text: `❌ *Error:* ${err.message || "Servicio no disponible"}`,
+        },
         { quoted: message },
       );
     }
