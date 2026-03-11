@@ -1,19 +1,16 @@
 "use strict";
 
-const playdl = require("play-dl");
 const axios = require("axios");
 
-// APIs especializadas en Spotify (Descarga directa)
-const SPOTIFY_APIS = (query) => [
-  `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(query)}`,
-  `https://api.agatz.xyz/api/spotify?url=${encodeURIComponent(query)}`,
-  `https://api.zenkey.my.id/api/download/spotify?url=${encodeURIComponent(query)}&apikey=zenkey`,
-  `https://api.davidcyriltech.my.id/spotifydl?url=${encodeURIComponent(query)}`,
-];
+// APIs de búsqueda y descarga (No requieren Auth)
+const SPOTIFY_SEARCH = (q) =>
+  `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(q)}`;
+const SPOTIFY_DL = (url) =>
+  `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(url)}`;
 
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Busca y descarga música de Spotify",
+  description: "Descarga música de Spotify sin errores de Auth",
   permission: "public",
   group: true,
   private: true,
@@ -23,106 +20,76 @@ module.exports = {
     if (!query)
       return sock.sendMessage(
         sender,
-        { text: "❌ Uso: `.play <nombre de la canción o link de Spotify>`" },
+        { text: "❌ ¿Qué canción buscamos hoy?" },
         { quoted: message },
       );
 
     const { key } = await sock.sendMessage(
       sender,
-      { text: `🎧 Buscando en Spotify: *${query}*...` },
+      { text: `🎧 Buscando en Spotify...` },
       { quoted: message },
     );
 
     try {
-      let trackInfo = {
-        title: "Unknown",
-        artist: "Unknown",
-        thumbnail: "https://files.catbox.moe/5uli5p.jpeg",
-        url: "",
-      };
+      // --- PASO 1: BÚSQUEDA ---
+      // Usamos una API que ya tiene la autorización de Spotify integrada
+      const searchRes = await axios.get(SPOTIFY_SEARCH(query));
 
-      // --- PASO 1: BÚSQUEDA EN SPOTIFY ---
-      if (query.includes("spotify.com")) {
-        const data = await playdl.spotify(query);
-        trackInfo.title = data.name;
-        trackInfo.artist = data.artists.map((a) => a.name).join(", ");
-        trackInfo.thumbnail = data.thumbnail?.url || trackInfo.thumbnail;
-        trackInfo.url = query;
-      } else {
-        const search = await playdl.search(query, {
-          source: { spotify: "track" },
-          limit: 1,
-        });
-        if (search.length === 0)
-          throw new Error("No encontré nada en Spotify.");
-        const track = search[0];
-        trackInfo.title = track.name;
-        trackInfo.artist = track.artists.map((a) => a.name).join(", ");
-        trackInfo.thumbnail = track.thumbnail?.url || trackInfo.thumbnail;
-        trackInfo.url = track.url;
-      }
+      // La API de Agatz devuelve un array en .data
+      const track = searchRes.data?.data?.[0];
+      if (!track) throw new Error("No encontré la canción en Spotify.");
+
+      const trackUrl = track.url || track.link;
+      const title = track.title || track.name;
 
       // --- PASO 2: ENVIAR CARD ---
       await sock.sendMessage(
         sender,
         {
-          image: { url: trackInfo.thumbnail },
-          caption: `🎵 *${trackInfo.title}*\n🎤 *Artista:* ${trackInfo.artist}\n\n_📥 Descargando desde servidor Spotify..._`,
+          image: {
+            url:
+              track.thumbnail ||
+              track.image ||
+              "https://files.catbox.moe/5uli5p.jpeg",
+          },
+          caption: `🎵 *${title}*\n🎤 *Artista:* ${track.artist || "Desconocido"}\n\n_📥 Descargando audio, un momento..._`,
           contextInfo,
         },
         { quoted: message },
       );
 
-      let audioUrl = null;
+      // --- PASO 3: DESCARGA ---
+      const dlRes = await axios.get(SPOTIFY_DL(trackUrl));
 
-      // --- PASO 3: DESCARGA CON FALLBACK DE APIs ---
-      for (const api of SPOTIFY_APIS(trackInfo.url)) {
-        try {
-          const { data } = await axios.get(api, { timeout: 20000 });
+      // Validamos el link de descarga (evitando el error de 'function link')
+      let audioUrl =
+        dlRes.data?.result?.download ||
+        dlRes.data?.data?.url ||
+        dlRes.data?.url;
 
-          // Extractor de enlaces ultra-seguro
-          let dl =
-            data?.result?.download ||
-            data?.result?.url ||
-            data?.data?.url ||
-            data?.url ||
-            data?.link;
-
-          // Validamos que sea un string y no la función .link()
-          if (typeof dl === "string" && dl.startsWith("http")) {
-            audioUrl = dl;
-            break;
-          }
-        } catch (e) {
-          continue; // Si una API falla, vamos a la siguiente
-        }
+      if (typeof audioUrl !== "string" || !audioUrl.startsWith("http")) {
+        throw new Error(
+          "El servidor de descarga está saturado. Intenta de nuevo.",
+        );
       }
 
-      if (!audioUrl)
-        throw new Error(
-          "No se pudo obtener el audio de Spotify. Intenta con otro nombre.",
-        );
-
-      // --- PASO 4: ENVIAR AUDIO Y DOCUMENTO ---
-      const audioPayload = { url: audioUrl };
-      const safeTitle = trackInfo.title.replace(/[^\w\s-]/g, "").slice(0, 30);
-
-      // Enviar como Nota de Voz
+      // --- PASO 4: ENVIAR AUDIO ---
       await sock.sendMessage(
         sender,
         {
-          audio: audioPayload,
+          audio: { url: audioUrl },
           mimetype: "audio/mpeg",
           ptt: true,
         },
         { quoted: message },
       );
 
-      // Enviar como Archivo MP3
+      // Enviar como archivo para que lo puedan guardar
+      const safeTitle = title.replace(/[^\w\s-]/g, "").slice(0, 30);
       await sock.sendMessage(
         sender,
         {
-          document: audioPayload,
+          document: { url: audioUrl },
           mimetype: "audio/mpeg",
           fileName: `${safeTitle}.mp3`,
           contextInfo,
@@ -130,13 +97,15 @@ module.exports = {
         { quoted: message },
       );
 
-      // Limpiar mensaje de búsqueda
+      // Borramos el mensaje de "Buscando..."
       await sock.sendMessage(sender, { delete: key });
     } catch (err) {
-      console.error("[Spotify Error]", err);
+      console.error("[Spotify Error]", err.message);
       await sock.sendMessage(
         sender,
-        { text: `❌ *Error:* ${err.message}` },
+        {
+          text: `❌ *Error:* ${err.message || "No se pudo procesar la solicitud."}`,
+        },
         { quoted: message },
       );
     }
