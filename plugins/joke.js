@@ -64,7 +64,7 @@ module.exports = {
         // Si no, usamos la API (especialmente buena para programación/dark)
         const res = await axios.get(
           `https://v2.jokeapi.dev/joke/${cat === "any" ? "Any" : cat}?lang=es`,
-          { params: { blacklistFlags: "racist,sexist" }, timeout: 5000 },
+          {timeout: 5000 },
         );
 
         const data = res.data;
