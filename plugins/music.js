@@ -4,7 +4,7 @@ const axios = require("axios");
 
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Spotify Full + Preview (Fix de Búsqueda y Link)",
+  description: "Spotify Full + Preview (Detección de Link y Nombre)",
   permission: "public",
 
   run: async (sock, message, args, { sender, contextInfo }) => {
@@ -31,21 +31,26 @@ module.exports = {
 
       let trackUrl = "";
 
-      // 2. LÓGICA DE DETECCIÓN (Link vs Búsqueda)
-      if (query.includes("spotify.com")) {
-        // Es un link, lo usamos directamente
-        trackUrl = query.split("?")[0]; // Limpiamos parámetros extras del link
+      // 2. LÓGICA DE DETECCIÓN MEJORADA (RegEx para Links)
+      const spotifyLinkRegex =
+        /https?:\/\/open\.spotify\.com\/track\/[a-zA-Z0-9]+/;
+      const isLink = spotifyLinkRegex.test(query);
+
+      if (isLink) {
+        // ES UN LINK: Lo extraemos y limpiamos
+        trackUrl = query.match(spotifyLinkRegex)[0];
       } else {
-        // Es texto, buscamos el link primero
+        // ES NOMBRE/TEXTO: Buscamos el link oficial
         try {
-          const searchApi = await axios.get(
+          // Fuente 1: Vreden (Más estable para búsqueda)
+          const searchRes = await axios.get(
             `https://api.vreden.web.id/api/spotifysearch?query=${encodeURIComponent(query)}`,
           );
           trackUrl =
-            searchApi.data?.result?.[0]?.link ||
-            searchApi.data?.result?.[0]?.url;
+            searchRes.data?.result?.[0]?.link ||
+            searchRes.data?.result?.[0]?.url;
 
-          // Fallback de búsqueda si la primera falla
+          // Fallback: Agatz
           if (!trackUrl) {
             const backupSearch = await axios.get(
               `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(query)}`,
@@ -58,11 +63,9 @@ module.exports = {
       }
 
       if (!trackUrl)
-        throw new Error(
-          "No pude encontrar un enlace válido para esta canción.",
-        );
+        throw new Error("No encontré resultados para esa búsqueda.");
 
-      // 3. OBTENER METADATA CON TU TRUCO DE GOOGLEBOT
+      // 3. OBTENER METADATA (Googlebot Trick)
       const data = await getPreview(trackUrl, {
         headers: { "user-agent": "googlebot" },
       });
@@ -71,7 +74,7 @@ module.exports = {
         sender,
         {
           image: { url: data.image },
-          caption: `🎵 *${data.title}*\n🎤 *Artista:* ${data.artist}\n\n_📥 Descargando audio, espera un momento..._`,
+          caption: `🎵 *${data.title}*\n🎤 *Artista:* ${data.artist}\n\n_📥 Procesando audio..._`,
           contextInfo,
         },
         { quoted: message },
@@ -80,7 +83,7 @@ module.exports = {
       let audioBuffer = null;
       let isPreview = false;
 
-      // 4. INTENTO DE DESCARGA COMPLETA (APIs que funcionan en 2026)
+      // 4. INTENTO DE DESCARGA COMPLETA
       const dlApis = [
         `https://api.ryzendesu.vip/api/downloader/spotify?url=${encodeURIComponent(trackUrl)}`,
         `https://api.shizuka.site/spotify?url=${encodeURIComponent(trackUrl)}`,
@@ -108,7 +111,7 @@ module.exports = {
         }
       }
 
-      // 5. FALLBACK AL PREVIEW (Usando el JSON de spotify-url-info)
+      // 5. FALLBACK AL PREVIEW (30 Segundos)
       if (!audioBuffer && data.audio) {
         const resPreview = await axios.get(data.audio, {
           responseType: "arraybuffer",
@@ -125,9 +128,7 @@ module.exports = {
       }
 
       if (!audioBuffer)
-        throw new Error(
-          "No se pudo obtener el archivo de audio. Los servidores están saturados.",
-        );
+        throw new Error("Servidores saturados. No se pudo obtener el audio.");
 
       // 6. ENVÍO FINAL
       await sock.sendMessage(
