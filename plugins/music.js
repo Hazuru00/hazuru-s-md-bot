@@ -2,15 +2,9 @@
 
 const axios = require("axios");
 
-// APIs de búsqueda y descarga (No requieren Auth)
-const SPOTIFY_SEARCH = (q) =>
-  `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(q)}`;
-const SPOTIFY_DL = (url) =>
-  `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(url)}`;
-
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Descarga música de Spotify sin errores de Auth",
+  description: "Descarga música de múltiples fuentes (Spotify/YT)",
   permission: "public",
   group: true,
   private: true,
@@ -20,60 +14,105 @@ module.exports = {
     if (!query)
       return sock.sendMessage(
         sender,
-        { text: "❌ ¿Qué canción buscamos hoy?" },
+        { text: "❌ ¿Qué canción buscamos?" },
         { quoted: message },
       );
 
     const { key } = await sock.sendMessage(
       sender,
-      { text: `🎧 Buscando en Spotify...` },
+      { text: `🎧 Buscando: *${query}*...` },
       { quoted: message },
     );
 
     try {
-      // --- PASO 1: BÚSQUEDA ---
-      // Usamos una API que ya tiene la autorización de Spotify integrada
-      const searchRes = await axios.get(SPOTIFY_SEARCH(query));
+      let trackData = null;
 
-      // La API de Agatz devuelve un array en .data
-      const track = searchRes.data?.data?.[0];
-      if (!track) throw new Error("No encontré la canción en Spotify.");
+      // --- PASO 1: INTENTAR BÚSQUEDA EN SPOTIFY (Fuente 1) ---
+      try {
+        const res1 = await axios.get(
+          `https://api.siputzx.my.id/api/s/spotify?query=${encodeURIComponent(query)}`,
+        );
+        if (res1.data?.data?.[0]) {
+          const t = res1.data.data[0];
+          trackData = {
+            title: t.title || t.name,
+            artist: t.artist || "Desconocido",
+            url: t.url || t.link,
+            image: t.image || t.thumbnail,
+          };
+        }
+      } catch (e) {
+        console.log("Fuente 1 falló");
+      }
 
-      const trackUrl = track.url || track.link;
-      const title = track.title || track.name;
+      // --- PASO 2: RESPALDO BÚSQUEDA (Fuente 2 - Agatz) ---
+      if (!trackData) {
+        try {
+          const res2 = await axios.get(
+            `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(query)}`,
+          );
+          if (res2.data?.data?.[0]) {
+            const t = res2.data.data[0];
+            trackData = {
+              title: t.title || t.name,
+              artist: t.artist || "Desconocido",
+              url: t.url || t.link,
+              image: t.thumbnail || t.image,
+            };
+          }
+        } catch (e) {
+          console.log("Fuente 2 falló");
+        }
+      }
 
-      // --- PASO 2: ENVIAR CARD ---
+      if (!trackData)
+        throw new Error("No encontré la canción en ninguna fuente de Spotify.");
+
+      // --- PASO 3: ENVIAR CARD ---
       await sock.sendMessage(
         sender,
         {
           image: {
-            url:
-              track.thumbnail ||
-              track.image ||
-              "https://files.catbox.moe/5uli5p.jpeg",
+            url: trackData.image || "https://files.catbox.moe/5uli5p.jpeg",
           },
-          caption: `🎵 *${title}*\n🎤 *Artista:* ${track.artist || "Desconocido"}\n\n_📥 Descargando audio, un momento..._`,
+          caption: `🎵 *${trackData.title}*\n🎤 *Artista:* ${trackData.artist}\n\n_📥 Descargando audio..._`,
           contextInfo,
         },
         { quoted: message },
       );
 
-      // --- PASO 3: DESCARGA ---
-      const dlRes = await axios.get(SPOTIFY_DL(trackUrl));
+      // --- PASO 4: DESCARGA (Intentando múltiples descargadores) ---
+      let audioUrl = null;
+      const dlApis = [
+        `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(trackData.url)}`,
+        `https://api.agatz.xyz/api/spotifydl?url=${encodeURIComponent(trackData.url)}`,
+        `https://api.zenkey.my.id/api/download/spotify?url=${encodeURIComponent(trackData.url)}&apikey=zenkey`,
+      ];
 
-      // Validamos el link de descarga (evitando el error de 'function link')
-      let audioUrl =
-        dlRes.data?.result?.download ||
-        dlRes.data?.data?.url ||
-        dlRes.data?.url;
+      for (const api of dlApis) {
+        try {
+          const { data } = await axios.get(api, { timeout: 15000 });
+          let dl =
+            data?.result?.download ||
+            data?.data?.url ||
+            data?.result?.url ||
+            data?.url ||
+            data?.link;
 
-      if (typeof audioUrl !== "string" || !audioUrl.startsWith("http")) {
-        throw new Error(
-          "El servidor de descarga está saturado. Intenta de nuevo.",
-        );
+          if (typeof dl === "string" && dl.startsWith("http")) {
+            audioUrl = dl;
+            break;
+          }
+        } catch (e) {
+          continue;
+        }
       }
 
-      // --- PASO 4: ENVIAR AUDIO ---
+      if (!audioUrl)
+        throw new Error("Servidores de descarga saturados. Intenta de nuevo.");
+
+      // --- PASO 5: ENVIAR RESULTADOS ---
+      // Audio nota de voz
       await sock.sendMessage(
         sender,
         {
@@ -84,8 +123,8 @@ module.exports = {
         { quoted: message },
       );
 
-      // Enviar como archivo para que lo puedan guardar
-      const safeTitle = title.replace(/[^\w\s-]/g, "").slice(0, 30);
+      // Archivo MP3
+      const safeTitle = trackData.title.replace(/[^\w\s-]/g, "").slice(0, 30);
       await sock.sendMessage(
         sender,
         {
@@ -97,14 +136,13 @@ module.exports = {
         { quoted: message },
       );
 
-      // Borramos el mensaje de "Buscando..."
       await sock.sendMessage(sender, { delete: key });
     } catch (err) {
-      console.error("[Spotify Error]", err.message);
+      console.error("[Music Error]", err.message);
       await sock.sendMessage(
         sender,
         {
-          text: `❌ *Error:* ${err.message || "No se pudo procesar la solicitud."}`,
+          text: `❌ *Error:* ${err.message}`,
         },
         { quoted: message },
       );
