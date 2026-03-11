@@ -16,8 +16,8 @@ module.exports = {
         const cat = args[0] && valid.includes(args[0].toLowerCase()) ? args[0] : 'Any';
         try {
             const res = await axios.get(
-              `https://v2.jokeapi.dev/joke/${cat}?lang=es`,
-              { params: { blacklistFlags: "racist,sexist" }, timeout: 8000 },
+              `https://sv443.net/jokeapi/v2${cat}?lang=es`,
+              { params: {}, timeout: 8000 },
             );
             const data = res.data;
             if (data.error) throw new Error(data.message || 'No joke found');
