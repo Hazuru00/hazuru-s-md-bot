@@ -1,12 +1,10 @@
 "use strict";
 
 const axios = require("axios");
-const fetch = require("node-fetch");
-const spotify = require("spotify-url-info")(fetch);
 
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Descarga de Spotify usando dependencias oficiales",
+  description: "Spotify Full + Preview con Node-Fetch v3",
   permission: "public",
   group: true,
   private: true,
@@ -16,7 +14,7 @@ module.exports = {
     if (!query)
       return sock.sendMessage(
         sender,
-        { text: "❌ Escribe el nombre de la canción o un link." },
+        { text: "❌ Escribe el nombre o pega un link." },
         { quoted: message },
       );
 
@@ -27,12 +25,14 @@ module.exports = {
     );
 
     try {
-      let trackUrl = query;
-      let trackData = null;
+      // --- FIX PARA NODE-FETCH V3 (IMPORTACIÓN DINÁMICA) ---
+      const { default: fetch } = await import("node-fetch");
+      const spotify = require("spotify-url-info")(fetch);
 
-      // --- PASO 1: VALIDAR LINK O BUSCAR ---
+      let trackUrl = query;
+
+      // 1. Validar si es link o búsqueda
       if (!query.includes("spotify.com")) {
-        // Si no es link, buscamos el enlace oficial rápido con una API
         const search = await axios.get(
           `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(query)}`,
         );
@@ -40,23 +40,15 @@ module.exports = {
         if (!trackUrl) throw new Error("No encontré la canción en Spotify.");
       }
 
-      // --- PASO 2: OBTENER METADATA Y PREVIEW (De la dependencia) ---
-      // Usamos getDetails para tener el objeto completo que me mostraste antes
-      const details = await spotify.getDetails(trackUrl);
-      trackData = {
-        title: details.preview.title,
-        artist: details.preview.artist,
-        image: details.preview.image,
-        preview: details.preview.audio, // Aquí está tu audio de 30s
-        url: trackUrl,
-      };
+      // 2. Obtener Metadata y el JSON que me mostraste
+      // Usamos getPreview porque es el más rápido para traer el campo "audio"
+      const details = await spotify.getPreview(trackUrl);
 
-      // --- PASO 3: ENVIAR CARD ---
       await sock.sendMessage(
         sender,
         {
-          image: { url: trackData.image },
-          caption: `🎵 *${trackData.title}*\n🎤 *Artista:* ${trackData.artist}\n\n_📥 Intentando descargar canción completa..._`,
+          image: { url: details.image },
+          caption: `🎵 *${details.title}*\n🎤 *Artista:* ${details.artist}\n\n_📥 Buscando canción completa..._`,
           contextInfo,
         },
         { quoted: message },
@@ -65,7 +57,7 @@ module.exports = {
       let audioUrl = null;
       let isPreview = false;
 
-      // --- PASO 4: INTENTO DE DESCARGA COMPLETA ---
+      // 3. Intento de descarga completa (APIs Actualizadas)
       const dlApis = [
         `https://api.ryzendesu.vip/api/downloader/spotify?url=${encodeURIComponent(trackUrl)}`,
         `https://api.vreden.web.id/api/spotify?url=${encodeURIComponent(trackUrl)}`,
@@ -89,40 +81,38 @@ module.exports = {
         }
       }
 
-      // --- PASO 5: FALLBACK AL PREVIEW (Tu lógica) ---
+      // 4. EL PARACAÍDAS: Si falla la completa, usamos el audio de 30s del JSON
       if (!audioUrl) {
-        if (trackData.preview) {
-          audioUrl = trackData.preview;
+        if (details.audio) {
+          // Este es el link que viste en tu JSON
+          audioUrl = details.audio;
           isPreview = true;
           await sock.sendMessage(
             sender,
             {
-              text: "⚠️ Servidores de descarga completa saturados. Enviando *Preview de 30s* de respaldo.",
+              text: "⚠️ No se pudo obtener la canción completa. Enviando *Preview de 30s* de Spotify.",
             },
             { quoted: message },
           );
         } else {
-          throw new Error(
-            "No se pudo obtener el audio completo ni el preview.",
-          );
+          throw new Error("No se pudo obtener ningún tipo de audio.");
         }
       }
 
-      // --- PASO 6: ENVÍO FINAL ---
-      // Nota de voz
+      // 5. Envío del Audio
       await sock.sendMessage(
         sender,
         {
           audio: { url: audioUrl },
           mimetype: "audio/mpeg",
-          ptt: true,
+          ptt: true, // Se envía como nota de voz
         },
         { quoted: message },
       );
 
-      // Documento (Solo si es completa)
+      // Solo enviamos el archivo MP3 si es la canción completa
       if (!isPreview) {
-        const safeTitle = trackData.title.replace(/[^\w\s-]/g, "").slice(0, 30);
+        const safeTitle = details.title.replace(/[^\w\s-]/g, "").slice(0, 30);
         await sock.sendMessage(
           sender,
           {
@@ -137,7 +127,7 @@ module.exports = {
 
       await sock.sendMessage(sender, { delete: key });
     } catch (err) {
-      console.error("[Spotify Error]", err.message);
+      console.error("[Spotify Error]", err);
       await sock.sendMessage(
         sender,
         { text: `❌ *Error:* ${err.message}` },
