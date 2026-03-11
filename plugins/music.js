@@ -4,7 +4,7 @@ const axios = require("axios");
 
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Spotify con Googlebot User-Agent y Fallback",
+  description: "Spotify Full + Preview (Fix de Búsqueda y Link)",
   permission: "public",
 
   run: async (sock, message, args, { sender, contextInfo }) => {
@@ -12,13 +12,15 @@ module.exports = {
     if (!query)
       return sock.sendMessage(
         sender,
-        { text: "❌ ¿Qué canción buscamos?" },
+        {
+          text: "❌ Escribe el nombre de la canción o pega un link de Spotify.",
+        },
         { quoted: message },
       );
 
     const { key } = await sock.sendMessage(
       sender,
-      { text: `🎧 Preparando descarga...` },
+      { text: `🎧 Conectando con Spotify...` },
       { quoted: message },
     );
 
@@ -27,29 +29,49 @@ module.exports = {
       const { default: fetch } = await import("node-fetch");
       const { getPreview } = require("spotify-url-info")(fetch);
 
-      let trackUrl = query;
+      let trackUrl = "";
 
-      // 2. BÚSQUEDA (Si no es link, conseguimos uno oficial)
-      if (!/https?:\/\/open\.spotify\.com\/track\//.test(query)) {
-        const search = await axios.get(
-          `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(query)}`,
-        );
-        trackUrl = search.data?.data?.[0]?.url || search.data?.data?.[0]?.link;
-        if (!trackUrl) throw new Error("No encontré la canción en Spotify.");
+      // 2. LÓGICA DE DETECCIÓN (Link vs Búsqueda)
+      if (query.includes("spotify.com")) {
+        // Es un link, lo usamos directamente
+        trackUrl = query.split("?")[0]; // Limpiamos parámetros extras del link
+      } else {
+        // Es texto, buscamos el link primero
+        try {
+          const searchApi = await axios.get(
+            `https://api.vreden.web.id/api/spotifysearch?query=${encodeURIComponent(query)}`,
+          );
+          trackUrl =
+            searchApi.data?.result?.[0]?.link ||
+            searchApi.data?.result?.[0]?.url;
+
+          // Fallback de búsqueda si la primera falla
+          if (!trackUrl) {
+            const backupSearch = await axios.get(
+              `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(query)}`,
+            );
+            trackUrl = backupSearch.data?.data?.[0]?.url;
+          }
+        } catch (e) {
+          console.error("Error en búsqueda:", e.message);
+        }
       }
 
-      // 3. TU TRUCO: getPreview con Googlebot User-Agent
+      if (!trackUrl)
+        throw new Error(
+          "No pude encontrar un enlace válido para esta canción.",
+        );
+
+      // 3. OBTENER METADATA CON TU TRUCO DE GOOGLEBOT
       const data = await getPreview(trackUrl, {
-        headers: {
-          "user-agent": "googlebot",
-        },
+        headers: { "user-agent": "googlebot" },
       });
 
       await sock.sendMessage(
         sender,
         {
           image: { url: data.image },
-          caption: `🎵 *${data.title}*\n🎤 *Artista:* ${data.artist}\n\n_📥 Procesando audio..._`,
+          caption: `🎵 *${data.title}*\n🎤 *Artista:* ${data.artist}\n\n_📥 Descargando audio, espera un momento..._`,
           contextInfo,
         },
         { quoted: message },
@@ -58,11 +80,11 @@ module.exports = {
       let audioBuffer = null;
       let isPreview = false;
 
-      // 4. INTENTO DE DESCARGA COMPLETA
+      // 4. INTENTO DE DESCARGA COMPLETA (APIs que funcionan en 2026)
       const dlApis = [
         `https://api.ryzendesu.vip/api/downloader/spotify?url=${encodeURIComponent(trackUrl)}`,
+        `https://api.shizuka.site/spotify?url=${encodeURIComponent(trackUrl)}`,
         `https://api.vreden.web.id/api/spotify?url=${encodeURIComponent(trackUrl)}`,
-        `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(trackUrl)}`,
       ];
 
       for (const api of dlApis) {
@@ -71,9 +93,10 @@ module.exports = {
           let dlUrl =
             resDl.data?.url ||
             resDl.data?.data?.url ||
-            resDl.data?.result?.download;
+            resDl.data?.result?.download ||
+            resDl.data?.download;
 
-          if (dlUrl && typeof dlUrl === "string") {
+          if (dlUrl && typeof dlUrl === "string" && dlUrl.startsWith("http")) {
             const resAudio = await axios.get(dlUrl, {
               responseType: "arraybuffer",
             });
@@ -85,7 +108,7 @@ module.exports = {
         }
       }
 
-      // 5. FALLBACK AL PREVIEW (Usando la info de tu truco)
+      // 5. FALLBACK AL PREVIEW (Usando el JSON de spotify-url-info)
       if (!audioBuffer && data.audio) {
         const resPreview = await axios.get(data.audio, {
           responseType: "arraybuffer",
@@ -95,15 +118,18 @@ module.exports = {
         await sock.sendMessage(
           sender,
           {
-            text: "⚠️ Servidores saturados. Enviando *Preview de 30s* obtenido vía Googlebot.",
+            text: "⚠️ Descarga completa no disponible. Enviando *Preview oficial* (30s).",
           },
           { quoted: message },
         );
       }
 
-      if (!audioBuffer) throw new Error("No se pudo descargar el audio.");
+      if (!audioBuffer)
+        throw new Error(
+          "No se pudo obtener el archivo de audio. Los servidores están saturados.",
+        );
 
-      // 6. ENVÍO DE AUDIO COMO BUFFER (Evita el error de 'No disponible')
+      // 6. ENVÍO FINAL
       await sock.sendMessage(
         sender,
         {
@@ -130,7 +156,7 @@ module.exports = {
 
       await sock.sendMessage(sender, { delete: key });
     } catch (err) {
-      console.error("[Spotify Error]", err);
+      console.error("[Spotify Error]", err.message);
       await sock.sendMessage(
         sender,
         { text: `❌ *Error:* ${err.message}` },
