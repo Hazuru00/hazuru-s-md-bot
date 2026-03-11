@@ -1,11 +1,40 @@
 "use strict";
 
 const axios = require("axios");
-const yts = require("yt-search");
+
+// Función de descarga inspirada en la lógica de Spooty
+async function downloadSpotify(url) {
+  // Intentamos con el servidor más estable de ese ecosistema
+  const endpoints = [
+    `https://spotifyapi.caliphdev.com/api/download/track?url=${encodeURIComponent(url)}`,
+    `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(url)}`,
+    `https://api.fabdl.com/spotify/get?url=${encodeURIComponent(url)}`,
+  ];
+
+  for (const api of endpoints) {
+    try {
+      const res = await axios.get(api, { timeout: 20000 });
+      // El endpoint de caliphdev a veces devuelve el buffer directo o un JSON con el link
+      let dlUrl =
+        res.data?.result?.download ||
+        res.data?.data?.url ||
+        res.data?.url ||
+        (typeof res.data === "string" ? api : null);
+
+      if (dlUrl) {
+        const audio = await axios.get(dlUrl, { responseType: "arraybuffer" });
+        return Buffer.from(audio.data, "binary");
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Spotify Full + Preview (Fix 404 Búsqueda)",
+  description: "Spotify Full + Preview (Inspirado en Spooty)",
   permission: "public",
 
   run: async (sock, message, args, { sender, contextInfo }) => {
@@ -13,44 +42,32 @@ module.exports = {
     if (!query)
       return sock.sendMessage(
         sender,
-        { text: "❌ Escribe el nombre o pega un link." },
+        { text: "❌ ¿Qué buscamos hoy?" },
         { quoted: message },
       );
 
     const { key } = await sock.sendMessage(
       sender,
-      { text: `🎧 Buscando en Spotify...` },
+      { text: `🎧 Buscando en la base de Spotify...` },
       { quoted: message },
     );
 
     try {
       const { default: fetch } = await import("node-fetch");
-      const { getPreview, getDetails } = require("spotify-url-info")(fetch);
+      const { getPreview } = require("spotify-url-info")(fetch);
 
-      let trackUrl = "";
+      let trackUrl = query;
 
-      // 1. DETECCIÓN DE LINK O BÚSQUEDA
-      if (/https?:\/\/open\.spotify\.com\/track\//.test(query)) {
-        trackUrl = query.split("?")[0];
-      } else {
-        // Si no es link, buscamos el nombre en YouTube para obtener un título limpio
-        // Esto evita el error 404 de las APIs de búsqueda de Spotify
-        const search = await yts(query);
-        const vid = search.videos[0];
-        if (!vid) throw new Error("No encontré resultados para esa búsqueda.");
-
-        // Buscamos el link de Spotify usando una API de conversión estable
-        const searchApi = await axios.get(
-          `https://api.siputzx.my.id/api/s/spotify?query=${encodeURIComponent(vid.title)}`,
+      // 1. Validar Link o buscar (Usando un buscador rápido de tracks)
+      if (!/https?:\/\/open\.spotify\.com\/track\//.test(query)) {
+        const search = await axios.get(
+          `https://spotifyapi.caliphdev.com/api/search/tracks?q=${encodeURIComponent(query)}`,
         );
-        trackUrl =
-          searchApi.data?.data?.[0]?.url || searchApi.data?.data?.[0]?.link;
+        trackUrl = search.data?.[0]?.url;
+        if (!trackUrl) throw new Error("No encontré la canción.");
       }
 
-      if (!trackUrl)
-        throw new Error("No pude obtener un enlace de Spotify válido.");
-
-      // 2. OBTENER METADATA (Googlebot Trick)
+      // 2. Metadata con Googlebot (Tu truco esencial)
       const data = await getPreview(trackUrl, {
         headers: { "user-agent": "googlebot" },
       });
@@ -59,44 +76,17 @@ module.exports = {
         sender,
         {
           image: { url: data.image },
-          caption: `🎵 *${data.title}*\n🎤 *Artista:* ${data.artist}\n\n_📥 Descargando audio..._`,
+          caption: `🎵 *${data.title}*\n🎤 *Artista:* ${data.artist}\n\n_📥 Descargando audio completo..._`,
           contextInfo,
         },
         { quoted: message },
       );
 
-      let audioBuffer = null;
+      // 3. Descarga con la nueva función basada en Spooty
+      let audioBuffer = await downloadSpotify(trackUrl);
       let isPreview = false;
 
-      // 3. INTENTO DE DESCARGA COMPLETA (APIs 2026)
-      const dlApis = [
-        `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(trackUrl)}`,
-        `https://api.ryzendesu.vip/api/downloader/spotify?url=${encodeURIComponent(trackUrl)}`,
-        `https://api.vreden.web.id/api/spotify?url=${encodeURIComponent(trackUrl)}`,
-      ];
-
-      for (const api of dlApis) {
-        try {
-          const resDl = await axios.get(api, { timeout: 10000 });
-          let dlUrl =
-            resDl.data?.url ||
-            resDl.data?.data?.url ||
-            resDl.data?.download ||
-            resDl.data?.result?.download;
-
-          if (dlUrl && dlUrl.startsWith("http")) {
-            const resAudio = await axios.get(dlUrl, {
-              responseType: "arraybuffer",
-            });
-            audioBuffer = Buffer.from(resAudio.data, "binary");
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
-
-      // 4. EL PARACAÍDAS (Audio de 30s de tu JSON)
+      // 4. Paracaídas de 30 segundos (Si la descarga estilo Spooty falla)
       if (!audioBuffer && data.audio) {
         const resPreview = await axios.get(data.audio, {
           responseType: "arraybuffer",
@@ -105,15 +95,16 @@ module.exports = {
         isPreview = true;
         await sock.sendMessage(
           sender,
-          { text: "⚠️ Descarga completa fallida. Enviando *Preview de 30s*." },
+          {
+            text: "⚠️ Descarga completa fallida. Usando *Preview de 30s* de respaldo.",
+          },
           { quoted: message },
         );
       }
 
-      if (!audioBuffer)
-        throw new Error("No se pudo obtener el audio de ninguna fuente.");
+      if (!audioBuffer) throw new Error("No se pudo obtener el audio.");
 
-      // 5. ENVÍO
+      // 5. Envío
       await sock.sendMessage(
         sender,
         {
