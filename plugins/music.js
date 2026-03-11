@@ -1,10 +1,12 @@
 "use strict";
 
 const axios = require("axios");
+const fetch = require("node-fetch");
+const spotify = require("spotify-url-info")(fetch);
 
 module.exports = {
   commands: ["play", "music", "spotify"],
-  description: "Descarga completa con fallback a preview de 30s",
+  description: "Descarga de Spotify usando dependencias oficiales",
   permission: "public",
   group: true,
   private: true,
@@ -14,59 +16,65 @@ module.exports = {
     if (!query)
       return sock.sendMessage(
         sender,
-        { text: "❌ ¿Qué canción buscamos?" },
+        { text: "❌ Escribe el nombre de la canción o un link." },
         { quoted: message },
       );
 
     const { key } = await sock.sendMessage(
       sender,
-      { text: `🎧 Conectando a Spotify...` },
+      { text: `🎧 Conectando con Spotify...` },
       { quoted: message },
     );
 
     try {
-      // Importación dinámica para evitar que el bot crashee al arrancar
-      const { getPreview } = require("spotify-url-info")(require("node-fetch"));
-
       let trackUrl = query;
       let trackData = null;
 
-      // --- PASO 1: OBTENER EL LINK Y METADATA ---
+      // --- PASO 1: VALIDAR LINK O BUSCAR ---
       if (!query.includes("spotify.com")) {
+        // Si no es link, buscamos el enlace oficial rápido con una API
         const search = await axios.get(
-          `https://api.siputzx.my.id/api/s/spotify?query=${encodeURIComponent(query)}`,
+          `https://api.agatz.xyz/api/spotify?q=${encodeURIComponent(query)}`,
         );
         trackUrl = search.data?.data?.[0]?.url || search.data?.data?.[0]?.link;
         if (!trackUrl) throw new Error("No encontré la canción en Spotify.");
       }
 
-      // Sacamos la metadata de spotify-url-info (la que tú querías)
-      trackData = await getPreview(trackUrl);
+      // --- PASO 2: OBTENER METADATA Y PREVIEW (De la dependencia) ---
+      // Usamos getDetails para tener el objeto completo que me mostraste antes
+      const details = await spotify.getDetails(trackUrl);
+      trackData = {
+        title: details.preview.title,
+        artist: details.preview.artist,
+        image: details.preview.image,
+        preview: details.preview.audio, // Aquí está tu audio de 30s
+        url: trackUrl,
+      };
 
-      // --- PASO 2: ENVIAR CARD INFORMATIVA ---
+      // --- PASO 3: ENVIAR CARD ---
       await sock.sendMessage(
         sender,
         {
           image: { url: trackData.image },
-          caption: `🎵 *${trackData.title}*\n🎤 *Artista:* ${trackData.artist}\n\n_📥 Intentando descargar audio completo..._`,
+          caption: `🎵 *${trackData.title}*\n🎤 *Artista:* ${trackData.artist}\n\n_📥 Intentando descargar canción completa..._`,
           contextInfo,
         },
         { quoted: message },
       );
 
-      // --- PASO 3: INTENTO DE DESCARGA COMPLETA ---
       let audioUrl = null;
       let isPreview = false;
 
-      const modernApis = [
+      // --- PASO 4: INTENTO DE DESCARGA COMPLETA ---
+      const dlApis = [
         `https://api.ryzendesu.vip/api/downloader/spotify?url=${encodeURIComponent(trackUrl)}`,
         `https://api.vreden.web.id/api/spotify?url=${encodeURIComponent(trackUrl)}`,
         `https://api.siputzx.my.id/api/d/spotify?url=${encodeURIComponent(trackUrl)}`,
       ];
 
-      for (const api of modernApis) {
+      for (const api of dlApis) {
         try {
-          const { data } = await axios.get(api, { timeout: 12000 });
+          const { data } = await axios.get(api, { timeout: 15000 });
           let dl =
             data?.url ||
             data?.data?.url ||
@@ -81,27 +89,27 @@ module.exports = {
         }
       }
 
-      // --- PASO 4: LÓGICA DE FALLBACK (TU IDEA) ---
+      // --- PASO 5: FALLBACK AL PREVIEW (Tu lógica) ---
       if (!audioUrl) {
-        if (trackData.audio) {
-          // trackData.audio es el preview de 30s de spotify-url-info
-          audioUrl = trackData.audio;
+        if (trackData.preview) {
+          audioUrl = trackData.preview;
           isPreview = true;
           await sock.sendMessage(
             sender,
             {
-              text: "⚠️ Los servidores de descarga completa fallaron. Enviando *Preview de 30s* para no dejarte sin nada.",
+              text: "⚠️ Servidores de descarga completa saturados. Enviando *Preview de 30s* de respaldo.",
             },
             { quoted: message },
           );
         } else {
           throw new Error(
-            "No se pudo obtener ni el audio completo ni el preview.",
+            "No se pudo obtener el audio completo ni el preview.",
           );
         }
       }
 
-      // --- PASO 5: ENVIAR RESULTADO ---
+      // --- PASO 6: ENVÍO FINAL ---
+      // Nota de voz
       await sock.sendMessage(
         sender,
         {
@@ -112,6 +120,7 @@ module.exports = {
         { quoted: message },
       );
 
+      // Documento (Solo si es completa)
       if (!isPreview) {
         const safeTitle = trackData.title.replace(/[^\w\s-]/g, "").slice(0, 30);
         await sock.sendMessage(
